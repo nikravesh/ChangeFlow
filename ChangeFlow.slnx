@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="src/01.Core/Domain/ChangeFlow.Core.Domain.csproj" />
+  <Project Path="src/01.Core/Application/ChangeFlow.Core.Application.csproj" />
+  <Project Path="src/02.Infra/DataAccess/ChangeFlow.Infra.DataAccess.csproj" />
+  <Project Path="src/03.Endpoints/Api/ChangeFlow.Endpoints.Api.csproj" />
+  <Project Path="tests/ChangeFlow.Tests/ChangeFlow.Tests.csproj" />
+</Solution>
