@@ -1,6 +1,7 @@
 using System.Net;
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -25,10 +26,12 @@ namespace ChangeFlow.Tests.ChangeRequests.Contract;
 public sealed class ChangeRequestAuthenticationTests(ChangeRequestApiFixture fixture)
     : IClassFixture<ChangeRequestApiFixture>
 {
-    [Fact]
-    public async Task Production_route_accepts_a_token_using_discovery_and_jwks()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Production_route_accepts_a_token_using_discovery_and_jwks(bool useNetworkTls)
     {
-        const string authority = "https://discovery-issuer.example";
+        var authority = "https://discovery-issuer.example";
         const string audience = "discovery-workflow-api";
         const string keyId = "discovery-test-key";
         using var rsa = RSA.Create(2048);
@@ -36,10 +39,37 @@ public sealed class ChangeRequestAuthenticationTests(ChangeRequestApiFixture fix
         var publicKey = rsa.ExportParameters(false);
         var issuerRequests = new ConcurrentQueue<string>();
         var issuerBuilder = WebApplication.CreateBuilder();
-        issuerBuilder.WebHost.UseTestServer();
+        using var tlsKey = RSA.Create(2048);
+        var certificateRequest = new CertificateRequest(
+            "CN=127.0.0.1", tlsKey, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        var san = new SubjectAlternativeNameBuilder();
+        san.AddIpAddress(IPAddress.Loopback);
+        certificateRequest.CertificateExtensions.Add(san.Build());
+        certificateRequest.CertificateExtensions.Add(new X509EnhancedKeyUsageExtension(
+            new OidCollection { new("1.3.6.1.5.5.7.3.1") }, critical: false));
+        using var generatedCertificate = certificateRequest.CreateSelfSigned(
+            DateTimeOffset.UtcNow.AddMinutes(-5), DateTimeOffset.UtcNow.AddHours(1));
+        using var certificate = X509CertificateLoader.LoadPkcs12(
+            generatedCertificate.Export(X509ContentType.Pkcs12), null);
+        if (useNetworkTls)
+        {
+            issuerBuilder.WebHost.ConfigureKestrel(options =>
+                options.Listen(IPAddress.Loopback, 0, listener => listener.UseHttps(certificate)));
+        }
+        else
+        {
+            issuerBuilder.WebHost.UseTestServer();
+        }
+
         await using var issuer = issuerBuilder.Build();
         issuer.Run(async context =>
         {
+            if (useNetworkTls && !context.Request.IsHttps)
+            {
+                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                return;
+            }
+
             issuerRequests.Enqueue(context.Request.Path.Value!);
             switch (context.Request.Path.Value)
             {
@@ -63,6 +93,15 @@ public sealed class ChangeRequestAuthenticationTests(ChangeRequestApiFixture fix
             }
         });
         await issuer.StartAsync();
+        if (useNetworkTls)
+        {
+            authority = Assert.Single(issuer.Urls);
+            using var probe = new HttpClient(CreateTlsBackchannel(certificate));
+            using var metadata = await probe.GetAsync($"{authority}/.well-known/openid-configuration");
+            metadata.EnsureSuccessStatusCode();
+            issuerRequests.Clear();
+        }
+
         using var database = new ChangeFlowApiFactory();
         await using var factory = database.WithWebHostBuilder(builder =>
         {
@@ -74,7 +113,9 @@ public sealed class ChangeRequestAuthenticationTests(ChangeRequestApiFixture fix
                 }));
             builder.ConfigureServices(services =>
                 services.Configure<JwtBearerOptions>(ChangeRequestRouteGroup.Scheme,
-                    options => options.BackchannelHttpHandler = issuer.GetTestServer().CreateHandler()));
+                    options => options.BackchannelHttpHandler = useNetworkTls
+                        ? CreateTlsBackchannel(certificate)
+                        : issuer.GetTestServer().CreateHandler()));
         });
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new("Setup", database.SetupCode);
@@ -108,6 +149,14 @@ public sealed class ChangeRequestAuthenticationTests(ChangeRequestApiFixture fix
         Assert.Contains("/.well-known/openid-configuration", issuerRequests);
         Assert.Contains("/keys", issuerRequests);
     }
+
+    private static HttpClientHandler CreateTlsBackchannel(X509Certificate2 certificate) => new()
+    {
+        UseProxy = false,
+        ServerCertificateCustomValidationCallback = (_, presented, _, errors) =>
+            presented is not null && presented.Equals(certificate)
+            && (errors & ~System.Net.Security.SslPolicyErrors.RemoteCertificateChainErrors) == 0
+    };
     [Theory]
     [InlineData("missing", HttpStatusCode.Unauthorized, "authentication_required")]
     [InlineData("unsigned", HttpStatusCode.Unauthorized, "authentication_required")]

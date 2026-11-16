@@ -36,3 +36,7 @@
 - آزمون ۴۰ حساب — ۲۰ Requester و ۲۰ Reviewer، ۲۰ درخواست Approved و ۴۰ تصمیم ثبت کردند. حذف فایل SQLite اختصاصی پس از پایان موفق آزمون تأیید شد. این اجرا سنجش کاربری SC-001، SC-002 و SC-005 را تکمیل نمی‌کند.
 
 در اجرای نهایی با SDK 11.0.100، dotnet build ChangeFlow.slnx --no-restore با صفر خطا و هشدار، سه آزمون فاز ۷ با فیلتر نام آزمون، و dotnet test ChangeFlow.slnx --no-build با ۹۲ آزمون موفق پایان یافتند.
+
+## آزمون تکمیلی TLS محلی
+
+آزمون خواندن OpenID metadata و JWKS با صادرکنندهٔ مستقل Kestrel روی HTTPS واقعی loopback اجرا شد. backchannel به گواهی موقت همان آزمون اعتماد محدود داشت. سپس API در TestServer توکن RSA را پذیرفت و POST /change-requests پاسخ 201 داد. آزمون متمرکز در هر دو حالت درون‌فرایندی و TLS شبکه موفق شد. اجرای کامل dotnet test ChangeFlow.slnx --no-build با ۱۰۲ آزمون موفق پایان یافت. این اجرا اعتبار TLS و صادرکنندهٔ محیط استقرار یا معیارهای انسانی را تأیید نمی‌کند.
