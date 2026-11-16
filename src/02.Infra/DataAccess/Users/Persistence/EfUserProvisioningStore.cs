@@ -45,15 +45,15 @@ public sealed class EfUserProvisioningStore(
                     user.LoginIdentifier.Normalized,
                     cancellationToken)
                     ? new LoginIdentifierConflict()
-                    : new UnexpectedFailure();
+                    : new UnexpectedFailure("persistence", exception.GetType().Name);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
             }
-            catch
+            catch (Exception exception)
             {
-                return new UnexpectedFailure();
+                return new UnexpectedFailure("persistence", exception.GetType().Name);
             }
         }
 
@@ -94,21 +94,10 @@ public sealed class EfUserProvisioningStore(
         string normalizedLoginIdentifier,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            await using var context = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-            return await context.Set<UserRecord>().AnyAsync(
-                user => user.NormalizedLoginIdentifier == normalizedLoginIdentifier,
-                cancellationToken);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch
-        {
-            return false;
-        }
+        await using var context = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        return await context.Set<UserRecord>().AnyAsync(
+            user => user.NormalizedLoginIdentifier == normalizedLoginIdentifier,
+            cancellationToken);
     }
 
     private static bool IsBusyOrLocked(Exception exception)

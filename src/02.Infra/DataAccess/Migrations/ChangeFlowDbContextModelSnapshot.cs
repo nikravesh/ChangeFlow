@@ -1,3 +1,5 @@
+using ChangeFlow.Core.Domain.ChangeRequests;
+using ChangeFlow.Infra.DataAccess.ChangeRequests;
 using ChangeFlow.Infra.DataAccess.Common;
 using ChangeFlow.Infra.DataAccess.Users.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -16,5 +18,7 @@ public sealed class ChangeFlowDbContextModelSnapshot : ModelSnapshot
         new UserConfiguration().Configure(modelBuilder.Entity<UserRecord>());
         new UserCredentialConfiguration().Configure(modelBuilder.Entity<UserCredentialRecord>());
         new UserRoleConfiguration().Configure(modelBuilder.Entity<UserRoleRecord>());
+        new ChangeRequestConfiguration().Configure(modelBuilder.Entity<ChangeRequest>());
+        new ReviewDecisionConfiguration().Configure(modelBuilder.Entity<ReviewDecision>());
     }
 }

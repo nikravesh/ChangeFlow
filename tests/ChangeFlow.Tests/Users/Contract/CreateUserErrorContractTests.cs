@@ -2,17 +2,76 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text;
 using ChangeFlow.Core.Application.Users.CreateUser;
 using ChangeFlow.Core.Domain.Users;
+using ChangeFlow.Infra.DataAccess.Common;
 using ChangeFlow.Tests.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.EntityFrameworkCore;
 
 namespace ChangeFlow.Tests.Users.Contract;
 
 public sealed class CreateUserErrorContractTests
 {
+    [Theory]
+    [InlineData("0")]
+    [InlineData("1")]
+    [InlineData("Requester, Reviewer")]
+    [InlineData("requester")]
+    public async Task Only_exact_role_names_are_allowed(string role)
+    {
+        using var factory = new ChangeFlowApiFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Setup", factory.SetupCode);
+        using var response = await client.PostAsJsonAsync("/users", new
+        {
+            displayName = "Test Account",
+            loginIdentifier = "rejected.role",
+            password = TestSecretFactory.CreateValidPassword(),
+            roles = new[] { role }
+        });
+
+        await AssertProblem(response, HttpStatusCode.BadRequest, "validation_failed");
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(problem.GetProperty("errors").TryGetProperty("roles", out _));
+        await AssertDatabaseEmptyAsync(factory);
+    }
+
+    [Theory]
+    [InlineData("{\"displayName\":\"private-body-marker\"")]
+    [InlineData("{\"displayName\":{},\"loginIdentifier\":\"private-body-marker\"}")]
+    [InlineData("{\"displayName\":\"Test\",\"loginIdentifier\":\"test.login\",\"roles\":[\"Requester\"],\"extra\":\"private-body-marker\"}")]
+    public async Task Invalid_body_returns_sanitized_validation_problem_without_writing(string body)
+    {
+        using var factory = new ChangeFlowApiFactory();
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Setup", factory.SetupCode);
+        using var content = new StringContent(body, Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync("/users", content);
+        await AssertProblem(response, HttpStatusCode.BadRequest, "validation_failed");
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.True(problem.GetProperty("errors").TryGetProperty("body", out _));
+        Assert.DoesNotContain("private-body-marker", problem.GetRawText(), StringComparison.Ordinal);
+        await AssertDatabaseEmptyAsync(factory);
+    }
+
+    private static async Task AssertDatabaseEmptyAsync(ChangeFlowApiFactory factory)
+    {
+        var contextFactory = factory.Services.GetRequiredService<IDbContextFactory<ChangeFlowDbContext>>();
+        await using var context = await contextFactory.CreateDbContextAsync();
+        await context.Database.OpenConnectionAsync();
+        await using var command = context.Database.GetDbConnection().CreateCommand();
+        command.CommandText = """
+            SELECT (SELECT COUNT(*) FROM users)
+                + (SELECT COUNT(*) FROM user_roles)
+                + (SELECT COUNT(*) FROM user_credentials)
+            """;
+        Assert.Equal(0L, Convert.ToInt64(await command.ExecuteScalarAsync()));
+    }
+
     [Fact]
     public async Task Validation_failure_returns_400_problem_details()
     {

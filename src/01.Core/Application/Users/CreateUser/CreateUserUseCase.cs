@@ -45,14 +45,17 @@ public sealed class CreateUserUseCase(
             return new ValidationFailure(errors);
         }
 
+        var stage = "create_user";
         try
         {
             var user = User.Create(
                 command.DisplayName!,
                 command.LoginIdentifier!,
                 roles);
+            stage = "hashing";
             var passwordHash = passwordHasher.Hash(user, command.Password!);
 
+            stage = "persistence";
             var persistenceFailure = await store.ProvisionAsync(
                 user,
                 passwordHash,
@@ -72,9 +75,9 @@ public sealed class CreateUserUseCase(
         {
             throw;
         }
-        catch
+        catch (Exception exception)
         {
-            return new UnexpectedFailure();
+            return new UnexpectedFailure(stage, exception.GetType().Name);
         }
     }
 }

@@ -201,3 +201,10 @@ Task T032: آزمون عدم نشت داده حساس در Log
 - تمام Taskهای User Story دارای label متناظر هستند.
 - تغییر رفتار کشف‌شده هنگام اجرا ابتدا باید در Specification ثبت شود.
 - هیچ Taskی مجاز به افزودن پروژه پنجم، Generic Repository یا Business Logic در Endpoint/Infrastructure نیست.
+
+
+## Phase 6: Convergence
+
+- [X] T044 CRITICAL ثبت اطلاعات تشخیصی امن برای خطاهای غیرمنتظرهٔ hashing و persistence را در مسیر `src/01.Core/Application/Users/CreateUser/CreateUserUseCase.cs` و `src/02.Infra/DataAccess/Users/Persistence/EfUserProvisioningStore.cs` تکمیل کنید. نوع خطا، مرحلهٔ عملیات و correlation identifier را بدون دادهٔ حساب یا اسرار ثبت کنید و پاسخ عمومی 500 و عدم افشای اطلاعات را در `tests/ChangeFlow.Tests/Users/Contract/CreateUserSensitiveLoggingTests.cs` بیازمایید. per Constitution VIII و R-008 (contradicts)
+- [X] T045 در `src/03.Endpoints/Api/Users/CreateUser/CreateUserEndpoint.cs` فقط نام‌های دقیق Requester و Reviewer را از ورودی نقش بپذیرید. رشته‌های عددی مانند 0 و 1 و ترکیب چند نام را به خطای validation فیلد roles نگاشت کنید و عدم ذخیرهٔ کاربر یا نقش را در `tests/ChangeFlow.Tests/Users/Contract/CreateUserErrorContractTests.cs` بررسی کنید. per FR-005 و FR-008 و US2/AC3 (contradicts)
+- [X] T046 در `src/03.Endpoints/Api/Users/CreateUser/CreateUserEndpoint.cs` و `src/03.Endpoints/Api/Users/CreateUser/CreateUserRequest.cs` اعتبارسنجی بدنه را با قرارداد OpenAPI هم‌راستا کنید. JSON ناقص، نوع نامعتبر فیلد و فیلد اضافی را با 400 و ProblemDetails دارای validation_failed و traceId بدون بازتاب ورودی رد کنید. پوشش قرارداد، عدم ثبت داده و حفظ رفتار Setup را در `tests/ChangeFlow.Tests/Users/Contract/CreateUserErrorContractTests.cs` اضافه کنید. per FR-012 و R-007/R-008 و قرارداد OpenAPI (partial)

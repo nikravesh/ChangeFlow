@@ -9,4 +9,4 @@ public sealed record InvalidSetupCode : CreateUserFailure;
 
 public sealed record LoginIdentifierConflict : CreateUserFailure;
 
-public sealed record UnexpectedFailure : CreateUserFailure;
+public sealed record UnexpectedFailure(string? Stage = null, string? ExceptionType = null) : CreateUserFailure;

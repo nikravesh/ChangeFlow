@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Text.Json;
 using ChangeFlow.Core.Application.Users.CreateUser;
 using ChangeFlow.Core.Domain.Users;
 using ChangeFlow.Endpoints.Api.Common.Errors;
@@ -26,11 +27,18 @@ public static class CreateUserEndpoint
     }
 
     private static async Task<IResult> HandleAsync(
-        CreateUserRequest request,
         HttpContext httpContext,
         CreateUserUseCase useCase,
+        ILogger<CreateUserRequest> logger,
         CancellationToken cancellationToken)
     {
+        var request = await ReadRequestAsync(httpContext.Request, cancellationToken);
+        if (request is null)
+        {
+            return ValidationProblem(httpContext, new ValidationFailure(
+                new Dictionary<string, string[]> { ["body"] = ["Provide a valid JSON user request."] }));
+        }
+
         var setupCode = ReadSetupCode(httpContext.Request.Headers.Authorization);
         var roles = request.Roles?.Select(ParseRole).ToArray();
         var result = await useCase.ExecuteAsync(
@@ -48,16 +56,35 @@ public static class CreateUserEndpoint
             ValidationFailure failure => ValidationProblem(httpContext, failure),
             InvalidSetupCode => Unauthorized(httpContext),
             LoginIdentifierConflict => Conflict(httpContext),
-            UnexpectedFailure => Unexpected(httpContext),
-            _ => Unexpected(httpContext)
+            UnexpectedFailure failure => Unexpected(httpContext, logger, failure),
+            _ => Unexpected(httpContext, logger, new UnexpectedFailure())
         };
     }
 
-    private static UserRole ParseRole(string role) =>
-        Enum.TryParse<UserRole>(role, ignoreCase: false, out var parsed)
-        && Enum.IsDefined(parsed)
-            ? parsed
-            : (UserRole)(-1);
+    private static async Task<CreateUserRequest?> ReadRequestAsync(
+        HttpRequest request, CancellationToken cancellationToken)
+    {
+        if (!request.HasJsonContentType())
+        {
+            return null;
+        }
+
+        try
+        {
+            return await request.ReadFromJsonAsync<CreateUserRequest>(cancellationToken);
+        }
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private static UserRole ParseRole(string role) => role switch
+    {
+        nameof(UserRole.Requester) => UserRole.Requester,
+        nameof(UserRole.Reviewer) => UserRole.Reviewer,
+        _ => (UserRole)(-1)
+    };
 
     private static IResult Created(HttpContext context, CreateUserSuccess success)
     {
@@ -105,8 +132,10 @@ public static class CreateUserEndpoint
             "The login identifier is already in use."));
     }
 
-    private static IResult Unexpected(HttpContext context)
+    private static IResult Unexpected(HttpContext context, ILogger logger, UnexpectedFailure failure)
     {
+        logger.LogError("Create user failed at {Stage} with {ExceptionType}; correlation {CorrelationId}",
+            failure.Stage ?? "create_user", failure.ExceptionType ?? "Unknown", context.TraceIdentifier);
         CorrelationMiddleware.SetOutcome(context, "unexpected_failure", LogLevel.Error);
         return Problem(ProblemDetailsFactory.Create(
             context,

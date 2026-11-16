@@ -1,4 +1,6 @@
 using ChangeFlow.Infra.DataAccess.Common;
+using ChangeFlow.Core.Application.ChangeRequests;
+using ChangeFlow.Infra.DataAccess.ChangeRequests;
 using ChangeFlow.Core.Application.Users.CreateUser;
 using ChangeFlow.Infra.DataAccess.Users.Persistence;
 using ChangeFlow.Infra.DataAccess.Users.Security;
@@ -25,6 +27,7 @@ public static class DependencyInjection
         services.AddSingleton<IPasswordCredentialHasher, IdentityPasswordCredentialHasher>();
         services.AddSingleton<ISetupCodeValidator, ConfigurationSetupCodeValidator>();
         services.AddScoped<IUserProvisioningStore, EfUserProvisioningStore>();
+        services.AddScoped<IChangeRequestTransaction, EfChangeRequestTransaction>();
 
         return services;
     }
